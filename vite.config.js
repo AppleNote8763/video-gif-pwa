@@ -11,7 +11,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'pwa-icon.svg'],
+      includeAssets: ['favicon.svg', 'favicon.png', 'pwa-icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,wasm}'],
         maximumFileSizeToCacheInBytes: 30 * 1024 * 1024
@@ -27,15 +27,15 @@ export default defineConfig({
         start_url: base,
         icons: [
           {
-            src: `${base}pwa-icon.svg`,
+            src: `${base}icon-192.png`,
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'any maskable'
           },
           {
-            src: `${base}pwa-icon.svg`,
+            src: `${base}icon-512.png`,
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'any maskable'
           }
         ]

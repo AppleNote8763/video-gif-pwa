@@ -10,6 +10,7 @@ import { formatSeconds } from './utils/formatTime'
 const MAX_FILE_SIZE = 80 * 1024 * 1024
 const MAX_GIF_DURATION = 15
 const RECOMMENDED_GIF_DURATION = 10
+const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'
 const QUALITY_PRESETS = {
   compact: {
     label: '저용량',
@@ -232,6 +233,7 @@ export default function App() {
           <p className="mt-4 max-w-3xl text-slate-300 sm:text-lg">
             MP4 / MOV / WEBM을 브라우저에서 바로 GIF로 변환하세요. 빠른 변환, 미리보기, 다운로드, 그리고 PWA 설치 지원.
           </p>
+          <p className="mt-3 text-xs text-slate-500">v{APP_VERSION}</p>
         </header>
 
         <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">

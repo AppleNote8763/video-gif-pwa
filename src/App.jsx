@@ -236,8 +236,8 @@ export default function App() {
           <p className="mt-3 text-xs text-slate-500">v{APP_VERSION}</p>
         </header>
 
-        <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-          <section className="space-y-6">
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+          <section className="min-w-0 space-y-6">
             <FileUploadCard
               onFileSelect={handleFile}
               fileName={file?.name}
@@ -341,7 +341,7 @@ export default function App() {
             </div>
           </section>
 
-          <aside className="space-y-6">
+          <aside className="min-w-0 space-y-6">
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-soft">
               <h2 className="mb-4 text-xl font-semibold text-white">변환 컨트롤</h2>
               <p className="mb-6 text-sm text-slate-400">변환 중에는 버튼이 비활성화됩니다. FFmpeg 로딩 상태를 확인하세요.</p>

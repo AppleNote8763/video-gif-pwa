@@ -8,12 +8,12 @@ export default function VideoPreview({ previewURL, onLoadedMetadata }) {
   }
 
   return (
-    <div className="aspect-video max-h-[52vh] min-h-[220px] overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-soft">
+    <div className="flex aspect-video max-h-[52vh] min-h-[180px] w-full max-w-full min-w-0 items-center justify-center overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 shadow-soft sm:min-h-[220px]">
       <video
         src={previewURL}
         controls
         onLoadedMetadata={onLoadedMetadata}
-        className="h-full w-full bg-black object-contain"
+        className="block h-full w-full max-w-full bg-black object-contain"
       />
     </div>
   )

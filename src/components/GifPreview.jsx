@@ -4,8 +4,8 @@ export default function GifPreview({ gifURL, onDownload }) {
       <h2 className="mb-4 text-xl font-semibold text-white">GIF 결과</h2>
       {gifURL ? (
         <div className="space-y-4">
-          <div className="flex max-h-[52vh] min-h-[180px] items-center justify-center overflow-hidden rounded-3xl border border-slate-700 bg-black p-3">
-            <img src={gifURL} alt="GIF preview" className="max-h-[48vh] max-w-full object-contain" />
+          <div className="flex max-h-[52vh] min-h-[180px] w-full max-w-full min-w-0 items-center justify-center overflow-hidden rounded-3xl border border-slate-700 bg-black p-3">
+            <img src={gifURL} alt="GIF preview" className="block h-auto w-auto max-h-[48vh] max-w-full object-contain" />
           </div>
           <button
             onClick={onDownload}

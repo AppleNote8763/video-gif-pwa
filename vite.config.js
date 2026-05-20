@@ -6,8 +6,13 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const packageJson = require('./package.json')
 
-const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1]
-const base = process.env.VITE_BASE_PATH || (process.env.GITHUB_ACTIONS && repositoryName ? `/${repositoryName}/` : '/')
+const deploymentBase = process.env.VITE_BASE_PATH || '/'
+const base = deploymentBase.endsWith('/') ? deploymentBase : `${deploymentBase}/`
+
+const crossOriginIsolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp'
+}
 
 export default defineConfig({
   base,
@@ -26,7 +31,8 @@ export default defineConfig({
       manifest: {
         name: 'Video to GIF PWA',
         short_name: 'GIF Maker',
-        description: '브라우저에서 동작하는 설치형 GIF 변환 앱',
+        description: '브라우저에서 동작하는 설치형 GIF 변환기',
+        lang: 'ko',
         theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',
@@ -50,15 +56,9 @@ export default defineConfig({
     })
   ],
   server: {
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp'
-    }
+    headers: crossOriginIsolationHeaders
   },
   preview: {
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp'
-    }
+    headers: crossOriginIsolationHeaders
   }
 })

@@ -7,7 +7,40 @@ import { useFFmpeg } from './hooks/useFFmpeg'
 import { validateVideoFile } from './utils/ffmpegHelpers'
 import { formatSeconds } from './utils/formatTime'
 
-const MAX_FILE_SIZE = 150 * 1024 * 1024
+const MAX_FILE_SIZE = 80 * 1024 * 1024
+const MAX_GIF_DURATION = 15
+const RECOMMENDED_GIF_DURATION = 10
+const QUALITY_PRESETS = {
+  compact: {
+    label: '저용량',
+    description: '모바일 공유용, 작은 파일 우선',
+    width: 320,
+    fps: 8,
+    maxColors: 128,
+    paletteUse: 'paletteuse=dither=bayer:bayer_scale=5'
+  },
+  balanced: {
+    label: '기본',
+    description: '품질과 용량 균형',
+    width: 480,
+    fps: 10,
+    maxColors: 192,
+    paletteUse: 'paletteuse=dither=bayer:bayer_scale=4'
+  },
+  quality: {
+    label: '고화질',
+    description: '선명도 우선, 용량 증가 가능',
+    width: 720,
+    fps: 15,
+    maxColors: 256,
+    paletteUse: 'paletteuse=dither=sierra2_4a'
+  }
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '0 MB'
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
 
 export default function App() {
   const { ffmpeg, ready, loading: ffmpegLoading, progress: ffmpegProgress, error: ffmpegError } = useFFmpeg()
@@ -16,6 +49,7 @@ export default function App() {
   const [videoDuration, setVideoDuration] = useState(0)
   const [startTime, setStartTime] = useState(0)
   const [endTime, setEndTime] = useState(0)
+  const [qualityPreset, setQualityPreset] = useState('balanced')
   const [fps, setFps] = useState(10)
   const [width, setWidth] = useState(480)
   const [gifURL, setGifURL] = useState('')
@@ -30,6 +64,17 @@ export default function App() {
     if (!ready) return 'FFmpeg 준비 중...'
     return 'FFmpeg 준비 완료 - 파일을 업로드하고 변환하세요.'
   }, [ffmpegError, ffmpegLoading, ready])
+
+  const selectedPreset = QUALITY_PRESETS[qualityPreset]
+  const clipDuration = Math.max(0, endTime - startTime)
+
+  const guidanceText = useMemo(() => {
+    if (!file) return '모바일에서는 3~10초, 320~480px, 8~10FPS 설정이 안정적입니다.'
+    if (clipDuration > MAX_GIF_DURATION) return `GIF는 최대 ${MAX_GIF_DURATION}초까지만 변환할 수 있습니다. 구간을 줄여주세요.`
+    if (clipDuration >= MAX_GIF_DURATION) return '15초 이상 GIF는 용량과 메모리 사용량이 크게 늘어날 수 있습니다.'
+    if (clipDuration > RECOMMENDED_GIF_DURATION) return '10초를 넘는 GIF는 용량이 클 수 있습니다. 모바일에서는 저용량 프리셋을 권장합니다.'
+    return 'GIF 용량이 클 수 있습니다. 공유용이면 저용량 또는 기본 프리셋을 사용하세요.'
+  }, [clipDuration, file])
 
   useEffect(() => {
     return () => {
@@ -62,6 +107,7 @@ export default function App() {
     setStartTime(0)
     setEndTime(0)
     const url = URL.createObjectURL(selectedFile)
+    if (videoURL) URL.revokeObjectURL(videoURL)
     setVideoURL(url)
   }
 
@@ -69,8 +115,15 @@ export default function App() {
     const duration = Math.floor(event.target.duration || 0)
     setVideoDuration(duration)
     if (endTime === 0 || endTime > duration) {
-      setEndTime(duration)
+      setEndTime(Math.min(RECOMMENDED_GIF_DURATION, duration))
     }
+  }
+
+  const handlePreset = (presetKey) => {
+    const preset = QUALITY_PRESETS[presetKey]
+    setQualityPreset(presetKey)
+    setWidth(preset.width)
+    setFps(preset.fps)
   }
 
   const handleConvert = async () => {
@@ -90,6 +143,10 @@ export default function App() {
     }
     if (videoDuration > 0 && endTime > videoDuration) {
       setError('종료 시간이 영상 길이를 넘지 않도록 설정해주세요.')
+      return
+    }
+    if (clipDuration > MAX_GIF_DURATION) {
+      setError(`모바일 메모리 보호를 위해 GIF 변환 구간은 최대 ${MAX_GIF_DURATION}초까지 지원합니다.`)
       return
     }
     setConverting(true)
@@ -117,7 +174,7 @@ export default function App() {
         '-ss', `${startTime}`,
         '-to', `${endTime}`,
         '-i', inputName,
-        '-vf', `${videoFilter},palettegen`,
+        '-vf', `${videoFilter},palettegen=max_colors=${selectedPreset.maxColors}:stats_mode=diff`,
         paletteName
       )
 
@@ -126,7 +183,7 @@ export default function App() {
         '-to', `${endTime}`,
         '-i', inputName,
         '-i', paletteName,
-        '-filter_complex', `${videoFilter}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5`,
+        '-filter_complex', `${videoFilter}[x];[x][1:v]${selectedPreset.paletteUse}`,
         '-f', 'gif',
         outputName
       )
@@ -134,8 +191,9 @@ export default function App() {
       const data = ffmpeg.FS('readFile', outputName)
       const blob = new Blob([data], { type: 'image/gif' })
       const url = URL.createObjectURL(blob)
+      if (gifURL) URL.revokeObjectURL(gifURL)
       setGifURL(url)
-      setSuccessMessage('GIF 변환이 완료되었습니다.')
+      setSuccessMessage(`GIF 변환이 완료되었습니다. 예상 결과 용량: ${formatFileSize(blob.size)}`)
       setTimeout(() => {
         document.getElementById('resultSection')?.scrollIntoView({ behavior: 'smooth' })
       }, 100)
@@ -201,6 +259,28 @@ export default function App() {
 
             <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-soft">
               <h2 className="mb-4 text-xl font-semibold text-white">변환 옵션</h2>
+              <div className="mb-5 grid gap-3 sm:grid-cols-3">
+                {Object.entries(QUALITY_PRESETS).map(([presetKey, preset]) => (
+                  <button
+                    key={presetKey}
+                    type="button"
+                    onClick={() => handlePreset(presetKey)}
+                    disabled={converting}
+                    className={`rounded-2xl border px-4 py-3 text-left transition ${
+                      qualityPreset === presetKey
+                        ? 'border-sky-400 bg-sky-400/10 text-white'
+                        : 'border-slate-700 bg-slate-950/70 text-slate-300 hover:border-slate-500'
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    <span className="block text-sm font-semibold">{preset.label}</span>
+                    <span className="mt-1 block text-xs text-slate-400">{preset.width}px / {preset.fps}FPS</span>
+                    <span className="mt-2 block text-xs text-slate-500">{preset.description}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mb-5 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+                {guidanceText}
+              </div>
               <div className="grid gap-4 lg:grid-cols-2">
                 <label className="space-y-2 text-sm text-slate-300">
                   <span>시작 시간 (초)</span>
@@ -232,24 +312,29 @@ export default function App() {
                   <input
                     type="range"
                     min="3"
-                    max="24"
+                    max="15"
                     value={fps}
                     onChange={(e) => setFps(Number(e.target.value))}
                     className="w-full accent-sky-400"
                   />
+                  <p className="text-xs text-slate-500">모바일 권장 범위는 8~10FPS, 최대 15FPS입니다.</p>
                 </label>
                 <label className="space-y-2 text-sm text-slate-300">
                   <span>GIF 폭 (px)</span>
                   <input
                     type="number"
                     min="160"
-                    max="960"
+                    max="720"
                     step="16"
                     value={width}
-                    onChange={(e) => setWidth(Number(e.target.value))}
+                    onChange={(e) => setWidth(Math.min(720, Math.max(160, Number(e.target.value))))}
                     className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-sky-400"
                   />
+                  <p className="text-xs text-slate-500">모바일에서는 320~480px를 권장합니다.</p>
                 </label>
+              </div>
+              <div className="mt-4 rounded-2xl bg-slate-950/70 px-4 py-3 text-sm text-slate-400">
+                선택 구간: {formatSeconds(clipDuration)} / 최대 {MAX_GIF_DURATION}초
               </div>
             </div>
           </section>

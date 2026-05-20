@@ -1,6 +1,7 @@
 node_modules
 dist
 public/ffmpeg
+PROJECT_HANDOFF.md
 .env
 .env.local
 .DS_Store

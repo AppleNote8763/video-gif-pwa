@@ -7,7 +7,7 @@ import { useFFmpeg } from './hooks/useFFmpeg'
 import { validateVideoFile } from './utils/ffmpegHelpers'
 import { formatSeconds } from './utils/formatTime'
 
-const MAX_FILE_SIZE = 80 * 1024 * 1024
+const MAX_FILE_SIZE = 250 * 1024 * 1024
 const MAX_GIF_DURATION = 15
 const RECOMMENDED_GIF_DURATION = 10
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'
@@ -97,7 +97,7 @@ export default function App() {
   const handleFile = (selectedFile) => {
     setError('')
     setSuccessMessage('')
-    const validation = validateVideoFile(selectedFile, MAX_FILE_SIZE)
+    const validation = validateVideoFile(selectedFile)
     if (validation) {
       setError(validation)
       return
@@ -110,6 +110,9 @@ export default function App() {
     const url = URL.createObjectURL(selectedFile)
     if (videoURL) URL.revokeObjectURL(videoURL)
     setVideoURL(url)
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      setError(`파일 용량이 ${formatFileSize(MAX_FILE_SIZE)}를 초과했습니다. 업로드는 계속되지만 휴대폰에서는 변환이 느리거나 실패할 수 있습니다.`)
+    }
   }
 
   const handleMetadata = (event) => {

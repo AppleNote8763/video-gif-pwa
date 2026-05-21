@@ -62,5 +62,6 @@ The build completed successfully.
 
 - The user does not want UI changes unless explicitly requested.
 - This is a personal app, so practical S10e/mobile behavior matters more than broad public-user guardrails.
+- For future behavior or feature changes, bump the app version in `package.json` as part of the same patch. Do not retroactively bump the version for the current large-upload warning change; it remains `1.1.2`.
 - If working on mobile reliability, focus on FFmpeg memory use, large-file warnings, clip duration, width/FPS defaults, and Vercel/PWA cache behavior.
 - The Korean text in terminal output may appear garbled depending on shell encoding, but the app has built successfully.

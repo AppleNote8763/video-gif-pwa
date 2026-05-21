@@ -8,7 +8,8 @@ import { validateVideoFile } from './utils/ffmpegHelpers'
 import { formatSeconds } from './utils/formatTime'
 
 const MAX_FILE_SIZE = 250 * 1024 * 1024
-const MAX_GIF_DURATION = 15
+const MAX_GIF_DURATION = 30
+const LONG_GIF_WARNING_DURATION = 20
 const RECOMMENDED_GIF_DURATION = 10
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'
 const QUALITY_PRESETS = {
@@ -43,6 +44,22 @@ function formatFileSize(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+function createGifFileName(fileName) {
+  const fallbackName = 'video-to-gif'
+  const trimmedName = fileName?.trim()
+  if (!trimmedName) return `${fallbackName}.gif`
+
+  const baseName = trimmedName.replace(/\.[^/.\\]+$/, '').trim() || fallbackName
+  return `${baseName}.gif`
+}
+
+function normalizeGifFileName(fileName) {
+  const fallbackName = 'video-to-gif.gif'
+  const trimmedName = fileName.trim()
+  if (!trimmedName) return fallbackName
+  return trimmedName.toLowerCase().endsWith('.gif') ? trimmedName : `${trimmedName}.gif`
+}
+
 export default function App() {
   const { ffmpeg, ready, loading: ffmpegLoading, progress: ffmpegProgress, error: ffmpegError } = useFFmpeg()
   const [file, setFile] = useState(null)
@@ -54,6 +71,7 @@ export default function App() {
   const [fps, setFps] = useState(10)
   const [width, setWidth] = useState(480)
   const [gifURL, setGifURL] = useState('')
+  const [downloadFileName, setDownloadFileName] = useState('video-to-gif.gif')
   const [converting, setConverting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState('')
@@ -69,12 +87,12 @@ export default function App() {
   const selectedPreset = QUALITY_PRESETS[qualityPreset]
   const clipDuration = Math.max(0, endTime - startTime)
 
-  const guidanceText = useMemo(() => {
+  const displayGuidanceText = useMemo(() => {
     if (!file) return '모바일에서는 3~10초, 320~480px, 8~10FPS 설정이 안정적입니다.'
-    if (clipDuration > MAX_GIF_DURATION) return `GIF는 최대 ${MAX_GIF_DURATION}초까지만 변환할 수 있습니다. 구간을 줄여주세요.`
-    if (clipDuration >= MAX_GIF_DURATION) return '15초 이상 GIF는 용량과 메모리 사용량이 크게 늘어날 수 있습니다.'
-    if (clipDuration > RECOMMENDED_GIF_DURATION) return '10초를 넘는 GIF는 용량이 클 수 있습니다. 모바일에서는 저용량 프리셋을 권장합니다.'
-    return 'GIF 용량이 클 수 있습니다. 공유용이면 저용량 또는 기본 프리셋을 사용하세요.'
+    if (clipDuration > MAX_GIF_DURATION) return `GIF는 최대 ${MAX_GIF_DURATION}초까지 변환할 수 있습니다. 구간을 줄여주세요.`
+    if (clipDuration > LONG_GIF_WARNING_DURATION) return `${LONG_GIF_WARNING_DURATION}초를 초과하는 GIF는 휴대폰에서 변환이 느리거나 실패할 수 있습니다. 화질과 프레임은 선택한 설정 그대로 유지됩니다.`
+    if (clipDuration > RECOMMENDED_GIF_DURATION) return '10초를 넘는 GIF는 용량이 커질 수 있습니다. 모바일에서는 저용량 또는 기본 프리셋을 권장합니다.'
+    return 'GIF 용량이 적당합니다. 공유용이면 저용량 또는 기본 프리셋을 사용하세요.'
   }, [clipDuration, file])
 
   useEffect(() => {
@@ -104,6 +122,7 @@ export default function App() {
     }
     setFile(selectedFile)
     setGifURL('')
+    setDownloadFileName(createGifFileName(selectedFile.name))
     setVideoDuration(0)
     setStartTime(0)
     setEndTime(0)
@@ -219,7 +238,7 @@ export default function App() {
     if (!gifURL) return
     const link = document.createElement('a')
     link.href = gifURL
-    link.download = 'video-to-gif.gif'
+    link.download = normalizeGifFileName(downloadFileName)
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -284,7 +303,7 @@ export default function App() {
                 ))}
               </div>
               <div className="mb-5 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-                {guidanceText}
+                {displayGuidanceText}
               </div>
               <div className="grid gap-4 lg:grid-cols-2">
                 <label className="space-y-2 text-sm text-slate-300">
@@ -375,7 +394,12 @@ export default function App() {
             </div>
 
             <div id="resultSection">
-              <GifPreview gifURL={gifURL} onDownload={handleDownload} />
+              <GifPreview
+                gifURL={gifURL}
+                fileName={downloadFileName}
+                onFileNameChange={setDownloadFileName}
+                onDownload={handleDownload}
+              />
             </div>
           </aside>
         </div>

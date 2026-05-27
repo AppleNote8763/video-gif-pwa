@@ -8,7 +8,6 @@ import { validateVideoFile } from './utils/ffmpegHelpers'
 import { formatSeconds } from './utils/formatTime'
 
 const MAX_FILE_SIZE = 250 * 1024 * 1024
-const MAX_GIF_DURATION = 30
 const LONG_GIF_WARNING_DURATION = 20
 const RECOMMENDED_GIF_DURATION = 10
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev'
@@ -60,6 +59,23 @@ function normalizeGifFileName(fileName) {
   return trimmedName.toLowerCase().endsWith('.gif') ? trimmedName : `${trimmedName}.gif`
 }
 
+function getVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(url)
+      resolve(video.duration || 0)
+    }
+    video.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('영상 길이를 확인할 수 없습니다.'))
+    }
+    video.src = url
+  })
+}
+
 export default function App() {
   const { ffmpeg, ready, loading: ffmpegLoading, progress: ffmpegProgress, error: ffmpegError } = useFFmpeg()
   const [file, setFile] = useState(null)
@@ -92,11 +108,11 @@ export default function App() {
 
   const displayGuidanceText = useMemo(() => {
     if (!file) return '모바일에서는 3~10초, 320~480px, 8~10FPS 설정이 안정적입니다.'
-    if (clipDuration > MAX_GIF_DURATION) return `GIF는 최대 ${MAX_GIF_DURATION}초까지 변환할 수 있습니다. 구간을 줄여주세요.`
+    if (selectedFiles.length > 1) return '여러 파일은 각 영상의 전체 길이를 자동으로 읽어 순서대로 변환합니다. 긴 영상은 휴대폰에서 느리거나 실패할 수 있습니다.'
     if (clipDuration > LONG_GIF_WARNING_DURATION) return `${LONG_GIF_WARNING_DURATION}초를 초과하는 GIF는 휴대폰에서 변환이 느리거나 실패할 수 있습니다. 화질과 프레임은 선택한 설정 그대로 유지됩니다.`
     if (clipDuration > RECOMMENDED_GIF_DURATION) return '10초를 넘는 GIF는 용량이 커질 수 있습니다. 모바일에서는 저용량 또는 기본 프리셋을 권장합니다.'
     return 'GIF 용량이 적당합니다. 공유용이면 저용량 또는 기본 프리셋을 사용하세요.'
-  }, [clipDuration, file])
+  }, [clipDuration, file, selectedFiles.length])
 
   useEffect(() => {
     return () => {
@@ -111,7 +127,7 @@ export default function App() {
 
   useEffect(() => {
     if (file && videoDuration > 0 && endTime === 0) {
-      setEndTime(Math.min(10, videoDuration))
+      setEndTime(videoDuration)
     }
   }, [file, videoDuration, endTime])
 
@@ -150,7 +166,7 @@ export default function App() {
     const duration = Math.floor(event.target.duration || 0)
     setVideoDuration(duration)
     if (endTime === 0 || endTime > duration) {
-      setEndTime(Math.min(RECOMMENDED_GIF_DURATION, duration))
+      setEndTime(duration)
     }
   }
 
@@ -173,16 +189,8 @@ export default function App() {
       setError('FFmpeg 준비가 완료될 때까지 기다려주세요.')
       return
     }
-    if (startTime < 0 || endTime <= 0 || startTime >= endTime) {
+    if (filesToConvert.length === 1 && (startTime < 0 || endTime <= 0 || startTime >= endTime)) {
       setError('시작 시간과 종료 시간을 올바르게 설정해주세요.')
-      return
-    }
-    if (filesToConvert.length === 1 && videoDuration > 0 && endTime > videoDuration) {
-      setError('종료 시간이 영상 길이를 넘지 않도록 설정해주세요.')
-      return
-    }
-    if (clipDuration > MAX_GIF_DURATION) {
-      setError(`모바일 메모리 보호를 위해 GIF 변환 구간은 최대 ${MAX_GIF_DURATION}초까지 지원합니다.`)
       return
     }
     setConverting(true)
@@ -203,7 +211,7 @@ export default function App() {
     }))
     setResults(queuedResults)
 
-    const convertFile = async (selectedFile) => {
+    const convertFile = async (selectedFile, range) => {
       const extension = selectedFile.name.split('.').pop() || 'mp4'
       const inputName = `input.${extension}`
       const paletteName = 'palette.png'
@@ -220,18 +228,20 @@ export default function App() {
         ffmpeg.FS('writeFile', inputName, await fetchFile(selectedFile))
 
         const videoFilter = `fps=${fps},scale=${width}:-1:flags=lanczos`
+        const start = range?.start ?? startTime
+        const end = range?.end ?? endTime
 
         await ffmpeg.run(
-          '-ss', `${startTime}`,
-          '-to', `${endTime}`,
+          '-ss', `${start}`,
+          '-to', `${end}`,
           '-i', inputName,
           '-vf', `${videoFilter},palettegen=max_colors=${selectedPreset.maxColors}:stats_mode=diff`,
           paletteName
         )
 
         await ffmpeg.run(
-          '-ss', `${startTime}`,
-          '-to', `${endTime}`,
+          '-ss', `${start}`,
+          '-to', `${end}`,
           '-i', inputName,
           '-i', paletteName,
           '-filter_complex', `${videoFilter}[x];[x][1:v]${selectedPreset.paletteUse}`,
@@ -267,7 +277,19 @@ export default function App() {
         )))
 
         try {
-          const converted = await convertFile(selectedFile)
+          const range = filesToConvert.length > 1
+            ? { start: 0, end: await getVideoDuration(selectedFile) }
+            : { start: startTime, end: endTime }
+
+          if (!range.end || range.end <= range.start) {
+            throw new Error('변환할 영상 구간을 확인할 수 없습니다.')
+          }
+
+          if (range.end > LONG_GIF_WARNING_DURATION) {
+            setError(`${selectedFile.name}의 길이가 ${LONG_GIF_WARNING_DURATION}초를 초과합니다. 변환은 계속되지만 휴대폰에서는 느리거나 실패할 수 있습니다.`)
+          }
+
+          const converted = await convertFile(selectedFile, range)
           completedCount += 1
           setResults((currentResults) => currentResults.map((result) => (
             result.id === resultId
@@ -394,8 +416,9 @@ export default function App() {
                     min="0"
                     step="0.1"
                     value={startTime}
+                    disabled={selectedFiles.length > 1}
                     onChange={(e) => setStartTime(Number(e.target.value))}
-                    className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-sky-400"
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </label>
                 <label className="space-y-2 text-sm text-slate-300">
@@ -405,8 +428,9 @@ export default function App() {
                     min="0"
                     step="0.1"
                     value={endTime}
+                    disabled={selectedFiles.length > 1}
                     onChange={(e) => setEndTime(Number(e.target.value))}
-                    className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-sky-400"
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none transition focus:border-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
                   />
                 </label>
                 <label className="space-y-2 text-sm text-slate-300">
@@ -439,7 +463,9 @@ export default function App() {
                 </label>
               </div>
               <div className="mt-4 rounded-2xl bg-slate-950/70 px-4 py-3 text-sm text-slate-400">
-                선택 구간: {formatSeconds(clipDuration)} / 최대 {MAX_GIF_DURATION}초
+                {selectedFiles.length > 1
+                  ? '여러 파일 선택 시 각 영상의 전체 길이를 자동으로 변환합니다.'
+                  : `선택 구간: ${formatSeconds(clipDuration)}`}
               </div>
             </div>
           </section>

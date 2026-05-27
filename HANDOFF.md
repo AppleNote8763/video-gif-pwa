@@ -37,11 +37,26 @@ Production URL: https://video-gif-pwa.vercel.app/
 - GIF conversion duration is warning-only; long clips are not blocked.
 - File size over 250MB is warning-only; upload and conversion are not blocked by size.
 - Quality presets control width, FPS, color count, and palette use.
+- Each completed GIF starts downloading automatically after conversion finishes.
 - The app uses local browser processing only; videos are not uploaded to a server.
 - The PWA is configured for installable mobile use from the Vercel deployment.
 - The UI warns users to keep the app open while conversion is running because screen-off/background behavior can interrupt FFmpeg.wasm.
 
 ## Recent Change
+
+The app was updated to `1.1.6` with these behavior changes:
+
+- Completed GIFs now start downloading automatically immediately after each file finishes converting.
+- Multiple-file conversion still runs sequentially; each finished GIF downloads as it completes.
+- Manual per-result download buttons remain available for retrying or downloading again.
+- Version was bumped to `1.1.6`.
+
+Implementation details:
+
+- `downloadGif(gifURL, fileName)` centralizes the generated anchor download behavior.
+- `handleConvert` calls `downloadGif` after each successful `convertFile` result.
+- Existing manual download handlers now reuse `downloadGif`.
+- Browser and mobile PWA background limitations still apply; keep the app open during conversion.
 
 The app was updated to `1.1.5` with these behavior changes:
 

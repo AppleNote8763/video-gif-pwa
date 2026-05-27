@@ -4,6 +4,8 @@
 
 This is a personal-use React/Vite PWA that converts local video files to GIFs directly in the browser using FFmpeg.wasm. It is deployed on Vercel and intended to be installable on a phone through the browser's "Add to Home Screen" flow.
 
+Production URL: https://video-gif-pwa.vercel.app/
+
 ## Current Stack
 
 - React 18

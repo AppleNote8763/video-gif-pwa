@@ -59,6 +59,16 @@ function normalizeGifFileName(fileName) {
   return trimmedName.toLowerCase().endsWith('.gif') ? trimmedName : `${trimmedName}.gif`
 }
 
+function downloadGif(gifURL, fileName) {
+  if (!gifURL) return
+  const link = document.createElement('a')
+  link.href = gifURL
+  link.download = normalizeGifFileName(fileName)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 function getVideoDuration(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
@@ -290,15 +300,17 @@ export default function App() {
           }
 
           const converted = await convertFile(selectedFile, range)
+          const convertedFileName = createGifFileName(selectedFile.name)
           completedCount += 1
           setResults((currentResults) => currentResults.map((result) => (
             result.id === resultId
-              ? { ...result, status: 'done', gifURL: converted.gifURL, size: converted.size }
+              ? { ...result, status: 'done', gifURL: converted.gifURL, size: converted.size, fileName: convertedFileName }
               : result
           )))
+          downloadGif(converted.gifURL, convertedFileName)
           if (completedCount === 1) {
             setGifURL(converted.gifURL)
-            setDownloadFileName(createGifFileName(selectedFile.name))
+            setDownloadFileName(convertedFileName)
           }
         } catch (conversionError) {
           setResults((currentResults) => currentResults.map((result) => (
@@ -320,13 +332,7 @@ export default function App() {
   }
 
   const handleDownload = () => {
-    if (!gifURL) return
-    const link = document.createElement('a')
-    link.href = gifURL
-    link.download = normalizeGifFileName(downloadFileName)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+    downloadGif(gifURL, downloadFileName)
   }
 
   const handleResultFileNameChange = (resultId, nextFileName) => {
@@ -338,12 +344,7 @@ export default function App() {
   const handleResultDownload = (resultId) => {
     const result = results.find((item) => item.id === resultId)
     if (!result?.gifURL) return
-    const link = document.createElement('a')
-    link.href = result.gifURL
-    link.download = normalizeGifFileName(result.fileName)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+    downloadGif(result.gifURL, result.fileName)
   }
 
   return (

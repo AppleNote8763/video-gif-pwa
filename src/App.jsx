@@ -63,6 +63,7 @@ function normalizeGifFileName(fileName) {
 export default function App() {
   const { ffmpeg, ready, loading: ffmpegLoading, progress: ffmpegProgress, error: ffmpegError } = useFFmpeg()
   const [file, setFile] = useState(null)
+  const [selectedFiles, setSelectedFiles] = useState([])
   const [videoURL, setVideoURL] = useState('')
   const [videoDuration, setVideoDuration] = useState(0)
   const [startTime, setStartTime] = useState(0)
@@ -74,6 +75,8 @@ export default function App() {
   const [downloadFileName, setDownloadFileName] = useState('video-to-gif.gif')
   const [converting, setConverting] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, fileName: '' })
+  const [results, setResults] = useState([])
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
 
@@ -112,25 +115,34 @@ export default function App() {
     }
   }, [file, videoDuration, endTime])
 
-  const handleFile = (selectedFile) => {
+  const handleFile = (incomingFiles) => {
     setError('')
     setSuccessMessage('')
-    const validation = validateVideoFile(selectedFile)
-    if (validation) {
-      setError(validation)
+    const files = Array.isArray(incomingFiles) ? incomingFiles : [incomingFiles]
+    const invalidFile = files.find((selectedFile) => validateVideoFile(selectedFile))
+    if (invalidFile) {
+      setError(`${invalidFile.name}: ${validateVideoFile(invalidFile)}`)
       return
     }
-    setFile(selectedFile)
+    const firstFile = files[0]
+    setSelectedFiles(files)
+    setFile(firstFile)
+    results.forEach((result) => {
+      if (result.gifURL) URL.revokeObjectURL(result.gifURL)
+    })
+    setResults([])
     setGifURL('')
-    setDownloadFileName(createGifFileName(selectedFile.name))
+    setDownloadFileName(createGifFileName(firstFile.name))
     setVideoDuration(0)
     setStartTime(0)
     setEndTime(0)
-    const url = URL.createObjectURL(selectedFile)
+    setBatchProgress({ current: 0, total: files.length, fileName: '' })
+    const url = URL.createObjectURL(firstFile)
     if (videoURL) URL.revokeObjectURL(videoURL)
     setVideoURL(url)
-    if (selectedFile.size > MAX_FILE_SIZE) {
-      setError(`파일 용량이 ${formatFileSize(MAX_FILE_SIZE)}를 초과했습니다. 업로드는 계속되지만 휴대폰에서는 변환이 느리거나 실패할 수 있습니다.`)
+    const oversizedCount = files.filter((selectedFile) => selectedFile.size > MAX_FILE_SIZE).length
+    if (oversizedCount > 0) {
+      setError(`${oversizedCount}개 파일이 ${formatFileSize(MAX_FILE_SIZE)}를 초과했습니다. 업로드는 계속되지만 휴대폰에서는 변환이 느리거나 실패할 수 있습니다.`)
     }
   }
 
@@ -152,7 +164,8 @@ export default function App() {
   const handleConvert = async () => {
     setError('')
     setSuccessMessage('')
-    if (!file) {
+    const filesToConvert = selectedFiles.length > 0 ? selectedFiles : file ? [file] : []
+    if (filesToConvert.length === 0) {
       setError('동영상 파일을 먼저 업로드해주세요.')
       return
     }
@@ -164,7 +177,7 @@ export default function App() {
       setError('시작 시간과 종료 시간을 올바르게 설정해주세요.')
       return
     }
-    if (videoDuration > 0 && endTime > videoDuration) {
+    if (filesToConvert.length === 1 && videoDuration > 0 && endTime > videoDuration) {
       setError('종료 시간이 영상 길이를 넘지 않도록 설정해주세요.')
       return
     }
@@ -174,13 +187,27 @@ export default function App() {
     }
     setConverting(true)
     setProgress(0)
+    setBatchProgress({ current: 0, total: filesToConvert.length, fileName: '' })
+    if (gifURL) URL.revokeObjectURL(gifURL)
+    setGifURL('')
+    results.forEach((result) => {
+      if (result.gifURL) URL.revokeObjectURL(result.gifURL)
+    })
+    const queuedResults = filesToConvert.map((selectedFile, index) => ({
+      id: `${Date.now()}-${index}-${selectedFile.name}`,
+      sourceName: selectedFile.name,
+      fileName: createGifFileName(selectedFile.name),
+      status: 'queued',
+      gifURL: '',
+      error: ''
+    }))
+    setResults(queuedResults)
 
-    const extension = file.name.split('.').pop() || 'mp4'
-    const inputName = `input.${extension}`
-    const paletteName = 'palette.png'
-    const outputName = 'output.gif'
-
-    try {
+    const convertFile = async (selectedFile) => {
+      const extension = selectedFile.name.split('.').pop() || 'mp4'
+      const inputName = `input.${extension}`
+      const paletteName = 'palette.png'
+      const outputName = 'output.gif'
       ;[inputName, paletteName, outputName].forEach((name) => {
         try {
           ffmpeg.FS('unlink', name)
@@ -189,47 +216,83 @@ export default function App() {
         }
       })
 
-      ffmpeg.FS('writeFile', inputName, await fetchFile(file))
+      try {
+        ffmpeg.FS('writeFile', inputName, await fetchFile(selectedFile))
 
-      const videoFilter = `fps=${fps},scale=${width}:-1:flags=lanczos`
+        const videoFilter = `fps=${fps},scale=${width}:-1:flags=lanczos`
 
-      await ffmpeg.run(
-        '-ss', `${startTime}`,
-        '-to', `${endTime}`,
-        '-i', inputName,
-        '-vf', `${videoFilter},palettegen=max_colors=${selectedPreset.maxColors}:stats_mode=diff`,
-        paletteName
-      )
+        await ffmpeg.run(
+          '-ss', `${startTime}`,
+          '-to', `${endTime}`,
+          '-i', inputName,
+          '-vf', `${videoFilter},palettegen=max_colors=${selectedPreset.maxColors}:stats_mode=diff`,
+          paletteName
+        )
 
-      await ffmpeg.run(
-        '-ss', `${startTime}`,
-        '-to', `${endTime}`,
-        '-i', inputName,
-        '-i', paletteName,
-        '-filter_complex', `${videoFilter}[x];[x][1:v]${selectedPreset.paletteUse}`,
-        '-f', 'gif',
-        outputName
-      )
+        await ffmpeg.run(
+          '-ss', `${startTime}`,
+          '-to', `${endTime}`,
+          '-i', inputName,
+          '-i', paletteName,
+          '-filter_complex', `${videoFilter}[x];[x][1:v]${selectedPreset.paletteUse}`,
+          '-f', 'gif',
+          outputName
+        )
 
-      const data = ffmpeg.FS('readFile', outputName)
-      const blob = new Blob([data], { type: 'image/gif' })
-      const url = URL.createObjectURL(blob)
-      if (gifURL) URL.revokeObjectURL(gifURL)
-      setGifURL(url)
-      setSuccessMessage(`GIF 변환이 완료되었습니다. 예상 결과 용량: ${formatFileSize(blob.size)}`)
+        const data = ffmpeg.FS('readFile', outputName)
+        const blob = new Blob([data], { type: 'image/gif' })
+        return {
+          gifURL: URL.createObjectURL(blob),
+          size: blob.size
+        }
+      } finally {
+        ;[inputName, paletteName, outputName].forEach((name) => {
+          try {
+            ffmpeg.FS('unlink', name)
+          } catch {
+            // Ignore cleanup failures.
+          }
+        })
+      }
+    }
+
+    let completedCount = 0
+
+    try {
+      for (const [index, selectedFile] of filesToConvert.entries()) {
+        const resultId = queuedResults[index].id
+        setBatchProgress({ current: index + 1, total: filesToConvert.length, fileName: selectedFile.name })
+        setResults((currentResults) => currentResults.map((result) => (
+          result.id === resultId ? { ...result, status: 'converting', error: '' } : result
+        )))
+
+        try {
+          const converted = await convertFile(selectedFile)
+          completedCount += 1
+          setResults((currentResults) => currentResults.map((result) => (
+            result.id === resultId
+              ? { ...result, status: 'done', gifURL: converted.gifURL, size: converted.size }
+              : result
+          )))
+          if (completedCount === 1) {
+            setGifURL(converted.gifURL)
+            setDownloadFileName(createGifFileName(selectedFile.name))
+          }
+        } catch (conversionError) {
+          setResults((currentResults) => currentResults.map((result) => (
+            result.id === resultId
+              ? { ...result, status: 'failed', error: conversionError.message || String(conversionError) }
+              : result
+          )))
+        }
+      }
+
+      setSuccessMessage(`${completedCount}/${filesToConvert.length}개 GIF 변환이 완료되었습니다.`)
       setTimeout(() => {
         document.getElementById('resultSection')?.scrollIntoView({ behavior: 'smooth' })
       }, 100)
-    } catch (conversionError) {
-      setError(`GIF 생성 실패: ${conversionError.message || conversionError}`)
     } finally {
-      ;[inputName, paletteName, outputName].forEach((name) => {
-        try {
-          ffmpeg.FS('unlink', name)
-        } catch {
-          // Ignore cleanup failures.
-        }
-      })
+      setBatchProgress({ current: 0, total: filesToConvert.length, fileName: '' })
       setConverting(false)
     }
   }
@@ -239,6 +302,23 @@ export default function App() {
     const link = document.createElement('a')
     link.href = gifURL
     link.download = normalizeGifFileName(downloadFileName)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  const handleResultFileNameChange = (resultId, nextFileName) => {
+    setResults((currentResults) => currentResults.map((result) => (
+      result.id === resultId ? { ...result, fileName: nextFileName } : result
+    )))
+  }
+
+  const handleResultDownload = (resultId) => {
+    const result = results.find((item) => item.id === resultId)
+    if (!result?.gifURL) return
+    const link = document.createElement('a')
+    link.href = result.gifURL
+    link.download = normalizeGifFileName(result.fileName)
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -263,6 +343,7 @@ export default function App() {
             <FileUploadCard
               onFileSelect={handleFile}
               fileName={file?.name}
+              fileNames={selectedFiles.map((selectedFile) => selectedFile.name)}
               error={error}
               maxSize={MAX_FILE_SIZE}
               disabled={converting || ffmpegLoading}
@@ -373,11 +454,19 @@ export default function App() {
                   disabled={!file || converting || ffmpegLoading || !!ffmpegError}
                   className="inline-flex w-full items-center justify-center rounded-3xl bg-sky-500 px-5 py-4 text-base font-semibold text-slate-950 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-slate-700"
                 >
-                  {converting ? 'GIF 변환 중...' : 'GIF 변환 시작'}
+                  {converting ? 'GIF 변환 중...' : selectedFiles.length > 1 ? 'GIF 순차 변환 시작' : 'GIF 변환 시작'}
                 </button>
+                <p className="rounded-3xl border border-sky-400/30 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+                  변환 중에는 앱을 계속 열어두세요. 화면이 꺼지면 변환이 중단될 수 있습니다.
+                </p>
                 <div className="rounded-3xl bg-slate-950/70 p-4 text-sm text-slate-300">
                   <p className="mb-2 font-medium text-white">상태</p>
                   <p>{statusText}</p>
+                  {batchProgress.current > 0 && (
+                    <p className="mt-2 text-slate-400">
+                      {batchProgress.current}/{batchProgress.total} 변환 중: {batchProgress.fileName}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-3xl bg-slate-950/70 p-4">
                   <div className="mb-2 flex items-center justify-between text-sm text-slate-400">
@@ -397,8 +486,11 @@ export default function App() {
               <GifPreview
                 gifURL={gifURL}
                 fileName={downloadFileName}
+                results={results}
                 onFileNameChange={setDownloadFileName}
+                onResultFileNameChange={handleResultFileNameChange}
                 onDownload={handleDownload}
+                onResultDownload={handleResultDownload}
               />
             </div>
           </aside>

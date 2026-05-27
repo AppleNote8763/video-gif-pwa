@@ -1,7 +1,7 @@
-export default function FileUploadCard({ onFileSelect, fileName, error, maxSize, disabled }) {
+export default function FileUploadCard({ onFileSelect, fileName, fileNames = [], error, maxSize, disabled }) {
   const handleFiles = (files) => {
     if (files.length > 0) {
-      onFileSelect(files[0])
+      onFileSelect(Array.from(files))
     }
   }
 
@@ -39,6 +39,7 @@ export default function FileUploadCard({ onFileSelect, fileName, error, maxSize,
         <input
           type="file"
           accept="video/mp4,video/webm,video/quicktime"
+          multiple
           onChange={handleChange}
           disabled={disabled}
           className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
@@ -47,6 +48,16 @@ export default function FileUploadCard({ onFileSelect, fileName, error, maxSize,
       {fileName && (
         <div className="mt-5 rounded-3xl bg-slate-950 px-4 py-3 text-sm text-slate-200">
           <span className="font-medium text-slate-100">선택된 파일:</span> {fileName}
+        </div>
+      )}
+      {fileNames.length > 1 && (
+        <div className="mt-4 rounded-3xl border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-300">
+          <p className="mb-2 font-medium text-slate-100">{fileNames.length}개 파일이 선택되었습니다.</p>
+          <div className="max-h-32 space-y-1 overflow-y-auto pr-1">
+            {fileNames.map((name, index) => (
+              <p key={`${name}-${index}`} className="truncate text-slate-400">{name}</p>
+            ))}
+          </div>
         </div>
       )}
       {error && <div className="mt-4 rounded-3xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
